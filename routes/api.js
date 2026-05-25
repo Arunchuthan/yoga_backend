@@ -136,7 +136,6 @@ router.post('/admin/bulk-import', async (req, res) => {
     }
 });
 
-module.exports = router;
 // 👇 PASTE THIS ENDPOINT HERE
 router.post('/admin/leave-process', async (req, res) => {
     try {
@@ -174,3 +173,6 @@ router.post('/admin/leave-process', async (req, res) => {
         return res.status(500).json({ success: false, error: error.message });
     }
 });
+
+module.exports = router;
+
