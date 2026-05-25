@@ -65,7 +65,7 @@ router.get('/admin/leave-requests', async (req, res) => {
                         ep_number: emp.ep_number,
                         name: emp.name,
                         dates: req.dates,
-                        mobileNumber: emp.mobileNumber
+                        mobileNumber: emp.mobileNumber || emp.phone_number // Fallback safety
                     });
                 }
             });
@@ -81,16 +81,42 @@ router.post('/admin/leave-process', async (req, res) => {
     const { ep_number, requestId, status } = req.body;
     try {
         const employee = await Employee.findOne({ ep_number });
-        if (!employee) return res.status(404).json({ message: 'Employee not found' });
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
         
         const request = employee.leaveRequests.id(requestId);
-        if (!request) return res.status(404).json({ message: 'Request not found' });
+        if (!request) {
+            return res.status(404).json({ success: false, message: 'Request not found' });
+        }
         
+        // 1. Update the request track status
         request.status = status;
+        
+        // 2. If approved, add dates directly to attendance map logs for the dashboard calendar grid
+        if (status === 'Approved') {
+            request.dates.forEach(date => {
+                const alreadyLogged = employee.attendance.some(att => att.date === date);
+                if (!alreadyLogged) {
+                    employee.attendance.push({ 
+                        date: date, 
+                        status: 'Approved Leave' 
+                    });
+                }
+            });
+        }
+        
         await employee.save();
-        res.json({ message: `Request successfully evaluated as ${status}`, employee });
+        
+        // Return a response body that matches exactly what Flutter's ApiService expects
+        return res.status(200).json({ 
+            success: true, 
+            message: `Leave status updated to ${status}`, 
+            employee 
+        });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error(err);
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -127,7 +153,7 @@ router.post('/admin/add-employee', async (req, res) => {
 
 // Bulk Import data pipeline from CSV records
 router.post('/admin/bulk-import', async (req, res) => {
-    const { employees } = req.body; // Expects array of structured employee profiles
+    const { employees } = req.body; 
     try {
         await Employee.insertMany(employees, { ordered: false });
         res.json({ message: 'Bulk batch insertion operation completed' });
@@ -136,43 +162,4 @@ router.post('/admin/bulk-import', async (req, res) => {
     }
 });
 
-// 👇 PASTE THIS ENDPOINT HERE
-router.post('/admin/leave-process', async (req, res) => {
-    try {
-        const { ep_number, requestId, status } = req.body; 
-
-        const employee = await Employee.findOne({ ep_number });
-        if (!employee) {
-            return res.status(404).json({ success: false, message: "Employee not found" });
-        }
-
-        const request = employee.leaveRequests.id(requestId);
-        if (!request) {
-            return res.status(404).json({ success: false, message: "Request not found" });
-        }
-
-        request.status = status;
-
-        if (status === 'Approved') {
-            request.dates.forEach(date => {
-                const alreadyLogged = employee.attendance.some(att => att.date === date);
-                if (!alreadyLogged) {
-                    employee.attendance.push({
-                        date: date,
-                        status: 'Approved Leave' 
-                    });
-                }
-            });
-        }
-
-        await employee.save();
-        return res.status(200).json({ success: true, message: `Leave status updated to ${status}` });
-
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ success: false, error: error.message });
-    }
-});
-
 module.exports = router;
-
