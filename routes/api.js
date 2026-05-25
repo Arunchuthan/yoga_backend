@@ -39,59 +39,60 @@ router.post('/employee/login', async (req, res) => {
 
 // Submit a single leave application request
 // Submit a single leave application request
+// Submit a single leave application request
 router.post('/employee/leave-request', async (req, res) => {
     try {
         let { ep_number, dates } = req.body;
 
+        console.log(`📡 Incoming request for Employee: "${ep_number}" with Dates:`, dates);
+
         if (!ep_number || !dates) {
-            return res.status(400).json({ success: false, message: 'Missing ep_number or dates in request body' });
+            return res.status(400).json({ success: false, message: 'Missing ep_number or dates' });
         }
 
-        // Clean up string spaces
         const cleanEpNumber = ep_number.trim();
 
-        // FAIL-SAFE LOOKUP: Case-insensitive regex match that bypasses strict schema parsing bottlenecks
+        // FAIL-SAFE LOOKUP: Case-insensitive match to handle any string format perfectly
         const employee = await Employee.findOne({ 
             ep_number: { $regex: new RegExp(`^${cleanEpNumber}$`, 'i') } 
         });
 
         if (!employee) {
-            console.log(`❌ MongoDB look-up failed. No document matches ep_number: "${cleanEpNumber}"`);
+            console.log(`❌ MongoDB look-up failed for: "${cleanEpNumber}"`);
             return res.status(404).json({ success: false, message: `Employee profile '${cleanEpNumber}' not found` });
         }
 
-        console.log(`🎯 Employee document located successfully for: ${employee.name}`);
+        console.log(`🎯 Found Employee profile document: ${employee.name}`);
 
-        // Construct the new subdocument structure precisely matching LeaveRequestSchema
+        // Construct the subdocument precisely
         const newLeaveRequest = {
             dates: Array.isArray(dates) ? dates : [dates],
             status: 'Pending',
             createdAt: new Date()
         };
 
-        // Initialize arrays manually if Mongoose validation blocked them due to type mismatch
-        if (!employee.leaveRequests) {
+        // If leaveRequests array doesn't exist or failed to initialize, create it manually
+        if (!Array.isArray(employee.leaveRequests)) {
             employee.leaveRequests = [];
         }
 
-        // Push directly into the database document array matrix
+        // Push directly into the schema matrix array
         employee.leaveRequests.push(newLeaveRequest);
         
+        // Save to MongoDB Atlas
         await employee.save();
         
         console.log(`✅ Leave array successfully updated for ${employee.name}`);
         return res.status(200).json({ 
             success: true, 
-            message: 'Leave request submitted successfully', 
-            employee 
+            message: 'Leave request submitted successfully'
         });
 
     } catch (err) {
-        console.error("💥 CRITICAL BACKEND ERROR IN LEAVE ROUTE:", err);
+        console.error("💥 CRITICAL BACKEND ERROR:", err);
         return res.status(500).json({ success: false, error: err.message });
     }
 });
-
 // Fetch all active global pending leave requests for Admin
 router.get('/admin/leave-requests', async (req, res) => {
     try {
