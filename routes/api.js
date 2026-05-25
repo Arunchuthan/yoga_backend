@@ -137,3 +137,40 @@ router.post('/admin/bulk-import', async (req, res) => {
 });
 
 module.exports = router;
+// 👇 PASTE THIS ENDPOINT HERE
+router.post('/admin/leave-process', async (req, res) => {
+    try {
+        const { ep_number, requestId, status } = req.body; 
+
+        const employee = await Employee.findOne({ ep_number });
+        if (!employee) {
+            return res.status(404).json({ success: false, message: "Employee not found" });
+        }
+
+        const request = employee.leaveRequests.id(requestId);
+        if (!request) {
+            return res.status(404).json({ success: false, message: "Request not found" });
+        }
+
+        request.status = status;
+
+        if (status === 'Approved') {
+            request.dates.forEach(date => {
+                const alreadyLogged = employee.attendance.some(att => att.date === date);
+                if (!alreadyLogged) {
+                    employee.attendance.push({
+                        date: date,
+                        status: 'Approved Leave' 
+                    });
+                }
+            });
+        }
+
+        await employee.save();
+        return res.status(200).json({ success: true, message: `Leave status updated to ${status}` });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
