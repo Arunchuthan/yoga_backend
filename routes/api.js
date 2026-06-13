@@ -191,7 +191,16 @@ router.post('/admin/add-employee', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
+// GET profile by EP number (used for dashboard refresh without password)
+router.get('/employee/profile/:ep_number', async (req, res) => {
+  try {
+    const employee = await Employee.findOne({ ep_number: req.params.ep_number });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    res.json(employee);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 // Bulk Import data pipeline from CSV records
 router.post('/admin/bulk-import', async (req, res) => {
     const { employees } = req.body; 
