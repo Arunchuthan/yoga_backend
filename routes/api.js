@@ -212,5 +212,44 @@ router.post('/admin/bulk-import', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+// ✅ PASTE HERE - Leave Process Route
+router.post('/admin/leave-process', async (req, res) => {
+  try {
+    const { ep_number, requestId, status } = req.body;
+    const employee = await Employee.findOne({ ep_number: ep_number });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-module.exports = router;
+    const leaveRequest = employee.leaveRequests.id(requestId);
+    if (!leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
+
+    leaveRequest.status = status;
+    await employee.save({ validateBeforeSave: false });
+    res.json({ success: true, message: `Leave request ${status}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ PASTE HERE - Attendance Submit Route
+router.post('/admin/attendance', async (req, res) => {
+  try {
+    const { records, date } = req.body;
+    for (const record of records) {
+      const employee = await Employee.findOne({ ep_number: record.ep_number });
+      if (!employee) continue;
+
+      // Remove existing entry for this date if any
+      employee.attendance = employee.attendance.filter(a => a.date !== date);
+
+      // Push new record
+      employee.attendance.push({ date: date, status: record.status });
+      await employee.save({ validateBeforeSave: false });
+    }
+    res.json({ success: true, message: 'Attendance saved' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router; // this line already exists, don't add it twice
+
