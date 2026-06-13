@@ -80,7 +80,7 @@ router.post('/employee/leave-request', async (req, res) => {
         employee.leaveRequests.push(newLeaveRequest);
         
         // Save to MongoDB Atlas
-        await employee.save();
+       await employee.save({ validateBeforeSave: false });
         
         console.log(`✅ Leave array successfully updated for ${employee.name}`);
         return res.status(200).json({ 
@@ -191,6 +191,7 @@ router.post('/admin/add-employee', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
 // GET profile by EP number (used for dashboard refresh without password)
 router.get('/employee/profile/:ep_number', async (req, res) => {
   try {
