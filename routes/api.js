@@ -1,197 +1,56 @@
 const express = require('express');
 const router = express.Router();
+const https = require('https');
 const Store = require('../models/Store');
 const Employee = require('../models/Employee');
 
-// Fetch all retail stores
+// ─── SMS HELPER ───────────────────────────────────────────────────────────────
+async function sendSMS(mobileNumber, message) {
+  return new Promise((resolve, reject) => {
+    const url = `https://www.fast2sms.com/dev/bulkV2?authorization=bsNYwFlrRM64DumZToCBq3X9dSxnPjU2571Izcegh8GHJOyatVB9njfK8MGCSqyRhu56XdvPsiJ7EQxU&message=${encodeURIComponent(message)}&language=english&route=q&numbers=${mobileNumber}`;
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(JSON.parse(data)));
+    }).on('error', reject);
+  });
+}
+
+// ─── GET ALL STORES ───────────────────────────────────────────────────────────
 router.get('/stores', async (req, res) => {
-    try {
-        const stores = await Store.find();
-        res.json(stores);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+  try {
+    const stores = await Store.find();
+    res.json(stores);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Fetch all employees assigned to a specific store
+// ─── GET EMPLOYEES BY STORE ───────────────────────────────────────────────────
 router.get('/employees/:storeName', async (req, res) => {
-    try {
-        const employees = await Employee.find({ storeName: req.params.storeName });
-        res.json(employees);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+  try {
+    const employees = await Employee.find({ storeName: req.params.storeName });
+    res.json(employees);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Authenticate employee access profile
+// ─── EMPLOYEE LOGIN ───────────────────────────────────────────────────────────
 router.post('/employee/login', async (req, res) => {
-    const { ep_number, password } = req.body;
-    try {
-        const employee = await Employee.findOne({ ep_number });
-        if (!employee || employee.password !== password) {
-            return res.status(401).json({ message: 'Invalid Credentials' });
-        }
-        res.json(employee);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+  const { ep_number, password } = req.body;
+  try {
+    const employee = await Employee.findOne({ ep_number });
+    if (!employee || employee.password !== password) {
+      return res.status(401).json({ message: 'Invalid Credentials' });
     }
+    res.json(employee);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Submit a single leave application request
-// Submit a single leave application request
-// Submit a single leave application request
-router.post('/employee/leave-request', async (req, res) => {
-    try {
-        let { ep_number, dates } = req.body;
-
-        console.log(`📡 Incoming request for Employee: "${ep_number}" with Dates:`, dates);
-
-        if (!ep_number || !dates) {
-            return res.status(400).json({ success: false, message: 'Missing ep_number or dates' });
-        }
-
-        const cleanEpNumber = ep_number.trim();
-
-        // FAIL-SAFE LOOKUP: Case-insensitive match to handle any string format perfectly
-        const employee = await Employee.findOne({ 
-            ep_number: { $regex: new RegExp(`^${cleanEpNumber}$`, 'i') } 
-        });
-
-        if (!employee) {
-            console.log(`❌ MongoDB look-up failed for: "${cleanEpNumber}"`);
-            return res.status(404).json({ success: false, message: `Employee profile '${cleanEpNumber}' not found` });
-        }
-
-        console.log(`🎯 Found Employee profile document: ${employee.name}`);
-
-        // Construct the subdocument precisely
-        const newLeaveRequest = {
-            dates: Array.isArray(dates) ? dates : [dates],
-            status: 'Pending',
-            createdAt: new Date()
-        };
-
-        // If leaveRequests array doesn't exist or failed to initialize, create it manually
-        if (!Array.isArray(employee.leaveRequests)) {
-            employee.leaveRequests = [];
-        }
-
-        // Push directly into the schema matrix array
-        employee.leaveRequests.push(newLeaveRequest);
-        
-        // Save to MongoDB Atlas
-       await employee.save({ validateBeforeSave: false });
-        
-        console.log(`✅ Leave array successfully updated for ${employee.name}`);
-        return res.status(200).json({ 
-            success: true, 
-            message: 'Leave request submitted successfully'
-        });
-
-    } catch (err) {
-        console.error("💥 CRITICAL BACKEND ERROR:", err);
-        return res.status(500).json({ success: false, error: err.message });
-    }
-});
-// Fetch all active global pending leave requests for Admin
-router.get('/admin/leave-requests', async (req, res) => {
-    try {
-        const employees = await Employee.find({ 'leaveRequests.status': 'Pending' });
-        let summary = [];
-        employees.forEach(emp => {
-            emp.leaveRequests.forEach(req => {
-                if (req.status === 'Pending') {
-                    summary.push({
-                        requestId: req._id,
-                        ep_number: emp.ep_number,
-                        name: emp.name,
-                        dates: req.dates,
-                        mobileNumber: emp.mobileNumber || emp.phone_number // Fallback safety
-                    });
-                }
-            });
-        });
-        res.json(summary);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Process a pending leave request (Approve or Deny status updates)
-router.post('/admin/leave-process', async (req, res) => {
-    const { ep_number, requestId, status } = req.body;
-    try {
-        const employee = await Employee.findOne({ ep_number });
-        if (!employee) {
-            return res.status(404).json({ success: false, message: 'Employee not found' });
-        }
-        
-        const request = employee.leaveRequests.id(requestId);
-        if (!request) {
-            return res.status(404).json({ success: false, message: 'Request not found' });
-        }
-        
-        // 1. Update the request track status
-        request.status = status;
-        
-        // 2. If approved, add dates directly to attendance map logs for the dashboard calendar grid
-        if (status === 'Approved') {
-            request.dates.forEach(date => {
-                const alreadyLogged = employee.attendance.some(att => att.date === date);
-                if (!alreadyLogged) {
-                    employee.attendance.push({ 
-                        date: date, 
-                        status: 'Approved Leave' 
-                    });
-                }
-            });
-        }
-        
-        await employee.save({ validateBeforeSave: false });
-        // Return a response body that matches exactly what Flutter's ApiService expects
-        return res.status(200).json({ 
-            success: true, 
-            message: `Leave status updated to ${status}`, 
-            employee 
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-// Submit complete collective daily roster attendance data
-router.post('/admin/attendance', async (req, res) => {
-    const { records, date } = req.body; // records: [{ ep_number, status }]
-    try {
-        for (let rec of records) {
-            const employee = await Employee.findOne({ ep_number: rec.ep_number });
-            if (employee) {
-                const existing = employee.attendance.find(att => att.date === date);
-                if (!existing) {
-                    employee.attendance.push({ date, status: rec.status });
-                    await employee.save({ validateBeforeSave: false });
-                }
-            }
-        }
-        res.json({ message: 'Attendance records permanently locked for the date' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Register a single new profile record
-router.post('/admin/add-employee', async (req, res) => {
-    try {
-        const newEmp = new Employee(req.body);
-        await newEmp.save();
-        res.json({ message: 'Employee profile saved successfully', newEmp });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// GET profile by EP number (used for dashboard refresh without password)
+// ─── GET EMPLOYEE PROFILE (for dashboard refresh without password) ─────────────
 router.get('/employee/profile/:ep_number', async (req, res) => {
   try {
     const employee = await Employee.findOne({ ep_number: req.params.ep_number });
@@ -201,70 +60,165 @@ router.get('/employee/profile/:ep_number', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// Bulk Import data pipeline from CSV records
-router.post('/admin/bulk-import', async (req, res) => {
-    const { employees } = req.body; 
-    try {
-        await Employee.insertMany(employees, { ordered: false });
-        res.json({ message: 'Bulk batch insertion operation completed' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+
+// ─── SUBMIT LEAVE REQUEST ─────────────────────────────────────────────────────
+router.post('/employee/leave-request', async (req, res) => {
+  try {
+    let { ep_number, dates } = req.body;
+
+    console.log(`📡 Incoming request for Employee: "${ep_number}" with Dates:`, dates);
+
+    if (!ep_number || !dates) {
+      return res.status(400).json({ success: false, message: 'Missing ep_number or dates' });
     }
+
+    const cleanEpNumber = ep_number.trim();
+
+    const employee = await Employee.findOne({
+      ep_number: { $regex: new RegExp(`^${cleanEpNumber}$`, 'i') }
+    });
+
+    if (!employee) {
+      console.log(`❌ MongoDB look-up failed for: "${cleanEpNumber}"`);
+      return res.status(404).json({ success: false, message: `Employee '${cleanEpNumber}' not found` });
+    }
+
+    console.log(`🎯 Found Employee: ${employee.name}`);
+
+    const newLeaveRequest = {
+      dates: Array.isArray(dates) ? dates : [dates],
+      status: 'Pending',
+      createdAt: new Date()
+    };
+
+    if (!Array.isArray(employee.leaveRequests)) {
+      employee.leaveRequests = [];
+    }
+
+    employee.leaveRequests.push(newLeaveRequest);
+    await employee.save({ validateBeforeSave: false });
+
+    console.log(`✅ Leave request saved for ${employee.name}`);
+    return res.status(200).json({ success: true, message: 'Leave request submitted successfully' });
+
+  } catch (err) {
+    console.error('💥 CRITICAL BACKEND ERROR:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
+// ─── GET ALL PENDING LEAVE REQUESTS (Admin) ───────────────────────────────────
+router.get('/admin/leave-requests', async (req, res) => {
+  try {
+    const employees = await Employee.find({ 'leaveRequests.status': 'Pending' });
+    let summary = [];
+    employees.forEach(emp => {
+      emp.leaveRequests.forEach(req => {
+        if (req.status === 'Pending') {
+          summary.push({
+            requestId: req._id,
+            ep_number: emp.ep_number,
+            name: emp.name,
+            dates: req.dates,
+            mobileNumber: emp.mobileNumber || emp.phone_number
+          });
+        }
+      });
+    });
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PROCESS LEAVE REQUEST (Approve / Deny) ───────────────────────────────────
 router.post('/admin/leave-process', async (req, res) => {
   try {
     const { ep_number, requestId, status } = req.body;
 
-    const employee = await Employee.findOne({ ep_number: ep_number });
-    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    const employee = await Employee.findOne({ ep_number });
+    if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
 
-    // FIX: Find by _id using toString() comparison instead of .id() method
+    // Find leave request by _id safely
     const leaveRequest = employee.leaveRequests.find(
       lr => lr._id.toString() === requestId.toString()
     );
-    
-    if (!leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
+    if (!leaveRequest) return res.status(404).json({ success: false, message: 'Leave request not found' });
 
+    // Update status
     leaveRequest.status = status;
 
-    // FIX: Also update attendance if Approved
+    // If approved, mark dates as Approved Leave in attendance
     if (status === 'Approved') {
       for (const date of leaveRequest.dates) {
-        // Remove existing entry for this date
         employee.attendance = employee.attendance.filter(a => a.date !== date);
-        // Add as Approved Leave
         employee.attendance.push({ date: date, status: 'Approved Leave' });
       }
     }
 
     await employee.save({ validateBeforeSave: false });
-    res.json({ success: true, message: `Leave ${status}` });
+
+    // Send SMS notification
+    try {
+      const dates = leaveRequest.dates.join(', ');
+      const message = status === 'Approved'
+        ? `Dear ${employee.name}, your leave request for ${dates} has been Approved by your manager.`
+        : `Dear ${employee.name}, your leave request for ${dates} has been Denied by your manager.`;
+      await sendSMS(employee.mobileNumber, message);
+      console.log(`✅ SMS sent to ${employee.mobileNumber}`);
+    } catch (smsErr) {
+      console.log('SMS failed but leave status updated:', smsErr.message);
+    }
+
+    return res.status(200).json({ success: true, message: `Leave ${status} successfully` });
+
   } catch (err) {
     console.error('leave-process error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// ✅ PASTE HERE - Attendance Submit Route
+// ─── SUBMIT DAILY ATTENDANCE ──────────────────────────────────────────────────
 router.post('/admin/attendance', async (req, res) => {
   try {
     const { records, date } = req.body;
-    for (const record of records) {
-      const employee = await Employee.findOne({ ep_number: record.ep_number });
+    for (const rec of records) {
+      const employee = await Employee.findOne({ ep_number: rec.ep_number });
       if (!employee) continue;
 
-      // Remove existing entry for this date if any
+      // Remove existing entry for this date to avoid duplicates
       employee.attendance = employee.attendance.filter(a => a.date !== date);
 
-      // Push new record
-      employee.attendance.push({ date: date, status: record.status });
+      // Push fresh record
+      employee.attendance.push({ date: date, status: rec.status });
       await employee.save({ validateBeforeSave: false });
     }
-    res.json({ success: true, message: 'Attendance saved' });
+    res.json({ success: true, message: 'Attendance records saved successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-module.exports = router; // this line already exists, don't add it twice
+// ─── ADD SINGLE EMPLOYEE ──────────────────────────────────────────────────────
+router.post('/admin/add-employee', async (req, res) => {
+  try {
+    const newEmp = new Employee(req.body);
+    await newEmp.save();
+    res.json({ message: 'Employee profile saved successfully', newEmp });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── BULK IMPORT EMPLOYEES ────────────────────────────────────────────────────
+router.post('/admin/bulk-import', async (req, res) => {
+  const { employees } = req.body;
+  try {
+    await Employee.insertMany(employees, { ordered: false });
+    res.json({ message: 'Bulk import completed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
