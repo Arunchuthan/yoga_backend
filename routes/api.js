@@ -1,23 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const https = require('https');
 const Store = require('../models/Store');
 const Employee = require('../models/Employee');
-
-// ─── SMS HELPER ───────────────────────────────────────────────────────────────
-async function sendSMS(mobileNumber, message) {
-  return new Promise((resolve, reject) => {
-    const url = `https://www.fast2sms.com/dev/bulkV2?authorization=bsNYwFlrRM64DumZToCBq3X9dSxnPjU2571Izcegh8GHJOyatVB9njfK8MGCSqyRhu56XdvPsiJ7EQxU&message=${encodeURIComponent(message)}&language=english&route=v&numbers=${mobileNumber}`;
-    https.get(url, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        console.log('Fast2SMS response:', data);
-        resolve(JSON.parse(data));
-      });
-    }).on('error', reject);
-  });
-}
 
 // ─── GET ALL STORES ───────────────────────────────────────────────────────────
 router.get('/stores', async (req, res) => {
@@ -142,16 +126,13 @@ router.post('/admin/leave-process', async (req, res) => {
     const employee = await Employee.findOne({ ep_number });
     if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
 
-    // Find leave request by _id safely
     const leaveRequest = employee.leaveRequests.find(
       lr => lr._id.toString() === requestId.toString()
     );
     if (!leaveRequest) return res.status(404).json({ success: false, message: 'Leave request not found' });
 
-    // Update status
     leaveRequest.status = status;
 
-    // If approved, mark dates as Approved Leave in attendance
     if (status === 'Approved') {
       for (const date of leaveRequest.dates) {
         employee.attendance = employee.attendance.filter(a => a.date !== date);
@@ -160,18 +141,6 @@ router.post('/admin/leave-process', async (req, res) => {
     }
 
     await employee.save({ validateBeforeSave: false });
-
-    // Send SMS notification
-    try {
-      const dates = leaveRequest.dates.join(', ');
-      const message = status === 'Approved'
-        ? `Dear ${employee.name}, your leave request for ${dates} has been Approved by your manager.`
-        : `Dear ${employee.name}, your leave request for ${dates} has been Denied by your manager.`;
-      await sendSMS(employee.mobileNumber, message);
-      console.log(`✅ SMS sent to ${employee.mobileNumber}`);
-    } catch (smsErr) {
-      console.log('SMS failed but leave status updated:', smsErr.message);
-    }
 
     return res.status(200).json({ success: true, message: `Leave ${status} successfully` });
 
@@ -189,10 +158,7 @@ router.post('/admin/attendance', async (req, res) => {
       const employee = await Employee.findOne({ ep_number: rec.ep_number });
       if (!employee) continue;
 
-      // Remove existing entry for this date to avoid duplicates
       employee.attendance = employee.attendance.filter(a => a.date !== date);
-
-      // Push fresh record
       employee.attendance.push({ date: date, status: rec.status });
       await employee.save({ validateBeforeSave: false });
     }
