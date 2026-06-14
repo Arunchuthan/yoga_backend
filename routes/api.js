@@ -147,8 +147,7 @@ router.post('/admin/leave-process', async (req, res) => {
             });
         }
         
-        await employee.save();
-        
+        await employee.save({ validateBeforeSave: false });
         // Return a response body that matches exactly what Flutter's ApiService expects
         return res.status(200).json({ 
             success: true, 
@@ -171,7 +170,7 @@ router.post('/admin/attendance', async (req, res) => {
                 const existing = employee.attendance.find(att => att.date === date);
                 if (!existing) {
                     employee.attendance.push({ date, status: rec.status });
-                    await employee.save();
+                    await employee.save({ validateBeforeSave: false });
                 }
             }
         }
