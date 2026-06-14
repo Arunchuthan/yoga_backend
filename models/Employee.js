@@ -15,7 +15,7 @@ const EmployeeSchema = new mongoose.Schema({
     name: { type: String, required: true },
     ep_number: { type: String, required: true, unique: true },
     mobileNumber: { type: String, required: true },
-    photoUrl: { type: String, required: true },
+    photoUrl: { type: String, required: false, default: '' },
     storeName: { type: String, required: true },
     password: { type: String, required: true, default: '1234' },
     attendance: [AttendanceSchema],
