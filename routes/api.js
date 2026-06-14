@@ -7,11 +7,14 @@ const Employee = require('../models/Employee');
 // ─── SMS HELPER ───────────────────────────────────────────────────────────────
 async function sendSMS(mobileNumber, message) {
   return new Promise((resolve, reject) => {
-    const url = `https://www.fast2sms.com/dev/bulkV2?authorization=bsNYwFlrRM64DumZToCBq3X9dSxnPjU2571Izcegh8GHJOyatVB9njfK8MGCSqyRhu56XdvPsiJ7EQxU&message=${encodeURIComponent(message)}&language=english&route=q&numbers=${mobileNumber}`;
+    const url = `https://www.fast2sms.com/dev/bulkV2?authorization=bsNYwFlrRM64DumZToCBq3X9dSxnPjU2571Izcegh8GHJOyatVB9njfK8MGCSqyRhu56XdvPsiJ7EQxU&message=${encodeURIComponent(message)}&language=english&route=v&numbers=${mobileNumber}`;
     https.get(url, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(JSON.parse(data)));
+      res.on('end', () => {
+        console.log('Fast2SMS response:', data);
+        resolve(JSON.parse(data));
+      });
     }).on('error', reject);
   });
 }
