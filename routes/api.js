@@ -213,20 +213,36 @@ router.post('/admin/bulk-import', async (req, res) => {
     }
 });
 
-// ✅ PASTE HERE - Leave Process Route
 router.post('/admin/leave-process', async (req, res) => {
   try {
     const { ep_number, requestId, status } = req.body;
+
     const employee = await Employee.findOne({ ep_number: ep_number });
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-    const leaveRequest = employee.leaveRequests.id(requestId);
+    // FIX: Find by _id using toString() comparison instead of .id() method
+    const leaveRequest = employee.leaveRequests.find(
+      lr => lr._id.toString() === requestId.toString()
+    );
+    
     if (!leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
 
     leaveRequest.status = status;
+
+    // FIX: Also update attendance if Approved
+    if (status === 'Approved') {
+      for (const date of leaveRequest.dates) {
+        // Remove existing entry for this date
+        employee.attendance = employee.attendance.filter(a => a.date !== date);
+        // Add as Approved Leave
+        employee.attendance.push({ date: date, status: 'Approved Leave' });
+      }
+    }
+
     await employee.save({ validateBeforeSave: false });
-    res.json({ success: true, message: `Leave request ${status}` });
+    res.json({ success: true, message: `Leave ${status}` });
   } catch (err) {
+    console.error('leave-process error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
